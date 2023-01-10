@@ -1,0 +1,24 @@
+module Pointer exposing (..)
+
+import Html exposing (Html)
+import Svg exposing (..)
+import Svg.Events exposing (..)
+import Svg.Attributes exposing (..)
+import Browser
+
+main = Browser.sandbox{init = init, update=update, view=view}
+
+type alias Model = {}
+type Msg = Down {x:Float, y:Float}
+
+init: Model
+init = {}
+
+update: Msg -> Model -> Model
+update msg model = model
+
+view: Model -> Html Msg
+view model =
+    Html.div []
+        []
+            

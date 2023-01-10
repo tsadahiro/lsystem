@@ -1,0 +1,179 @@
+module Test3d exposing (..)
+import Angle
+import Camera3d
+import Length exposing (Meters, meters)
+import Color
+import Direction3d exposing (Direction3d)
+import Html exposing (Html)
+import Length
+import Pixels
+import Point3d exposing (Point3d)
+import Sphere3d
+import Cylinder3d
+import Axis3d
+import Vector3d exposing (Vector3d)
+import Scene3d
+import Scene3d.Material as Material
+import Viewpoint3d
+import Browser
+import Html exposing (Html)
+import Time
+import Lsystem
+
+main = Browser.element {init = init
+                        ,update = update
+                        ,view = view
+                        ,subscriptions = subscriptions}
+
+type alias Model = {word: String}
+type Msg = Elapsed Time.Posix
+type alias State coordinates  = { pos: Point3d Meters coordinates
+                                , dir: Vector3d Meters coordinates
+                                , normDir: Vector3d Meters coordinates
+                                , level: Int
+                                }
+
+init: () -> (Model, Cmd Msg)
+init _ =
+    (Model (Debug.log "" <| Lsystem.iterateGrow "0" 8)
+    ,Cmd.none)
+
+update: Msg -> Model -> (Model, Cmd Msg)
+update msg model =
+    (model, Cmd.none)
+        
+
+view: Model -> Html Msg
+view model =
+   let
+        material =
+            Material.nonmetal
+                { baseColor = Color.lightBrown
+                , roughness = 0.4 -- varies from 0 (mirror-like) to 1 (matte)
+                }
+        materialGreen =
+            Material.nonmetal
+                { baseColor = Color.green
+                , roughness = 0.4 -- varies from 0 (mirror-like) to 1 (matte)
+                }
+
+        plane =
+          Scene3d.quad materialGreen
+              (Point3d.meters 100 100 0)
+              (Point3d.meters -100 100 0)
+              (Point3d.meters -100 -100 0)
+              (Point3d.meters 100 -100 0)
+
+                    
+        -- Define a camera as usual
+        camera =
+            Camera3d.perspective
+                { viewpoint =
+                    Viewpoint3d.lookAt
+                        { focalPoint = (Point3d.meters 0 0 5)
+                        , eyePoint = Point3d.meters 0 30 5
+                        , upDirection = Direction3d.positiveZ
+                        }
+                , verticalFieldOfView = Angle.degrees 30
+                }
+    in
+    Html.div[]
+        [
+        Scene3d.sunny
+          { camera = camera
+          , clipDepth = Length.centimeters 0.5
+          , dimensions = ( Pixels.int 1000, Pixels.int 1000 )
+          , background = Scene3d.transparentBackground
+          , entities = plane::(treeView3d model.word
+                                   (State Point3d.origin
+                                        (Vector3d.meters 0 0 1)
+                                        (Vector3d.meters 0 2 0)
+                                        0
+                                   )
+                                   []
+                                   material
+                              )
+          , shadows = True
+
+          , upDirection = Direction3d.z
+
+          , sunlightDirection = Direction3d.yz (Angle.degrees -120)
+        }
+        ]
+
+
+treeView3d: String -> State coordinates -> List (State  coordinates) -> Material.Uniform coordinates -> List (Scene3d.Entity coordinates)
+treeView3d str state stack material =
+    if (String.length str) == 0 then
+        []
+    else
+        let
+            head = String.left 1 str
+            tail = String.dropLeft 1 str
+            unitLength = 2*0.65^(11-(toFloat state.level))
+            unitLine =
+                Scene3d.cylinderWithShadow material <|
+                    Cylinder3d.startingAt 
+                        state.pos (Maybe.withDefault Direction3d.x <| Vector3d.direction state.dir)
+                            {radius = Length.meters (0.2*0.8^(toFloat state.level))
+                            ,length = Length.meters (1*unitLength)
+                            }
+            dir = Vector3d.rotateAround
+                  (Axis3d.through state.pos
+                       (Maybe.withDefault Direction3d.x <| Vector3d.direction state.normDir))
+                  (Angle.degrees 30) 
+                      state.dir
+            normDir = Vector3d.rotateAround
+                      (Axis3d.through state.pos
+                           (Maybe.withDefault Direction3d.x <| Vector3d.direction dir))
+                      (Angle.degrees 90) 
+                          state.normDir
+
+        in
+            case head of
+                "0" -> unitLine :: (treeView3d tail
+                                        {state | 
+                                         pos = Point3d.translateBy
+                                               (Vector3d.scaleTo (Length.meters unitLength) state.dir)
+                                               state.pos
+                                        }
+                                        stack material)
+                "1" -> unitLine :: (treeView3d tail
+                                        {state |
+                                         pos = Point3d.translateBy
+                                               (Vector3d.scaleTo (Length.meters unitLength) state.dir)
+                                               state.pos
+                                        }
+                                        stack material)
+                "[" ->
+                    treeView3d tail  {state |
+                                      dir = dir
+                                     , normDir = normDir
+                                     ,level = state.level+1
+                                     } ({state|level = state.level+1}::stack) material
+                "]" ->
+                    let
+                        popped = Maybe.withDefault state (List.head stack)
+                        pdir = Vector3d.rotateAround
+                              (Axis3d.through state.pos
+                                   (Maybe.withDefault Direction3d.x <| Vector3d.direction popped.normDir))
+                              (Angle.degrees -30) 
+                                  popped.dir
+                        pnormDir = Vector3d.rotateAround
+                              (Axis3d.through state.pos
+                                   (Maybe.withDefault Direction3d.x <| Vector3d.direction dir))
+                              (Angle.degrees -90) 
+                                  popped.normDir
+                                      
+                    in
+                        treeView3d tail {popped|
+                                         dir = pdir
+                                        ,normDir = pnormDir
+                                      } (List.drop 1 stack) material
+                _ -> []
+
+                     
+        
+subscriptions: Model -> Sub Msg
+subscriptions model =
+      Time.every 10 Elapsed
